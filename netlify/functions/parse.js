@@ -56,14 +56,33 @@ exports.handler = async event => {
   }
   if (b.type === 'wood') return out(200, result);
   if (!caption || caption.length < 30) return out(422, { error: 'Nepodařilo se získat popisek. Vlož ho ručně.', ...result });
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 2500, system: SYS, messages: [{ role: 'user', content: caption.slice(0, 6000) }] })
-  });
-  const j = await r.json();
-  if (!r.ok) return out(502, { error: 'AI: ' + (j.error?.message || r.status), ...result });
-  const t = (j.content || []).map(c => c.text || '').join('');
+  let t = '';
+  try {
+    if (process.env.GEMINI_API_KEY) {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYS }] },
+          contents: [{ role: 'user', parts: [{ text: caption.slice(0, 6000) }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+        })
+      });
+      const j = await r.json();
+      if (!r.ok) return out(502, { error: 'AI (Gemini): ' + (j.error?.message || r.status), ...result });
+      t = (j.candidates?.[0]?.content?.parts || []).map(c => c.text || '').join('');
+    } else {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 2500, system: SYS, messages: [{ role: 'user', content: caption.slice(0, 6000) }] })
+      });
+      const j = await r.json();
+      if (!r.ok) return out(502, { error: 'AI: ' + (j.error?.message || r.status), ...result });
+      t = (j.content || []).map(c => c.text || '').join('');
+    }
+  } catch (e) { return out(502, { error: 'AI nedostupná: ' + e.message, ...result }); }
   try {
     const rec = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
     if (!rec.is_recipe || !rec.ingredients?.length) return out(422, { error: 'V textu jsem nenašel recept. Vlož celý popisek.', ...result });
