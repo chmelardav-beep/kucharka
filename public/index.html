@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2f7d5b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Kuchařka</title>
+<style>
+:root{--g:#2f7d5b;--bg:#faf8f4;--c:#fff;--t:#222;--m:#777;--l:#e6e2da}
+@media(prefers-color-scheme:dark){:root{--bg:#161614;--c:#222220;--t:#eee;--m:#999;--l:#38362f}}
+*{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;background:var(--bg);color:var(--t)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--c);border:1px solid var(--l);border-radius:10px;padding:8px 12px}
+button.pri{background:var(--g);color:#fff;border-color:var(--g)}
+button.on{background:var(--g);color:#fff;border-color:var(--g)}
+input,textarea,select{background:var(--c);border:1px solid var(--l);border-radius:10px;padding:9px;width:100%}
+textarea{min-height:90px;margin:6px 0}
+a{color:var(--g)}
+header{display:flex;gap:8px;align-items:center;padding:10px;position:sticky;top:0;background:var(--bg);z-index:5}
+.tabs{display:flex;gap:6px;flex:1}.tabs button{flex:1;font-weight:600}
+.bar{display:flex;gap:6px;padding:0 10px 6px;flex-wrap:wrap}.bar input{flex:1 1 100%}
+#chips{display:flex;gap:6px;padding:0 10px;flex-wrap:wrap}
+.chip{background:var(--g);color:#fff;border-radius:99px;padding:4px 10px;font-size:14px;border:0}
+.sortrow{padding:6px 10px}.sortrow select{width:auto}
+#grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:10px 10px 90px}
+@media(min-width:700px){#grid{grid-template-columns:repeat(4,1fr)}}
+.card{background:var(--c);border-radius:14px;overflow:hidden;position:relative;border:1px solid var(--l)}
+.card img,.card .ph0{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--l)}
+.ph0{display:flex;align-items:center;justify-content:center;font-size:40px}
+.card .t{padding:8px;font-weight:600;font-size:15px}.card .s{padding:0 8px 8px;font-size:13px;color:var(--m)}
+.card .hb{position:absolute;top:6px;right:6px;border-radius:99px;padding:4px 8px}
+.fab{position:fixed;right:18px;bottom:22px;width:58px;height:58px;border-radius:50%;background:var(--g);color:#fff;font-size:30px;border:0;box-shadow:0 3px 10px #0004;padding:0}
+.ov{position:fixed;inset:0;background:var(--bg);overflow:auto;z-index:10}
+.ph{display:flex;gap:8px;align-items:center;padding:10px;position:sticky;top:0;background:var(--bg);z-index:2}
+.ph h2{flex:1;margin:0;font-size:19px}
+.hero{width:100%;max-height:50vh;object-fit:cover;display:block}
+.pad{padding:12px 12px 80px}.pad h3{margin:20px 0 6px}
+ul.ing{list-style:none;padding:0;margin:0}.ing li{padding:7px 0;border-bottom:1px solid var(--l)}
+.ing label{display:flex;gap:10px;align-items:center}.ing input{width:22px;height:22px;flex:none}
+.ing .got{opacity:.4;text-decoration:line-through}.amt{font-weight:600;min-width:60px}
+ol.steps{padding-left:22px}ol.steps li{margin:8px 0}
+.big{font-size:22px;line-height:1.5}
+.stars button{font-size:26px;border:0;background:none;padding:2px 4px;color:#bbb}.stars button.on{color:#f5a623;background:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center}
+.cook{border-top:1px solid var(--l);padding:8px 0}.m{color:var(--m);font-size:14px}.err{color:#c0392b}
+.dual{position:relative;height:36px;margin:8px 4px}.dual .tr{position:absolute;top:16px;height:4px;left:0;right:0;background:var(--l);border-radius:2px}
+.dual .fl{position:absolute;top:16px;height:4px;background:var(--g);border-radius:2px}
+.dual input{position:absolute;left:0;top:7px;width:100%;margin:0;padding:0;border:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
+.dual input::-webkit-slider-runnable-track{background:none}
+.dual input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--g);border:2px solid #fff}
+.dual input::-moz-range-thumb{pointer-events:auto;width:22px;height:22px;border-radius:50%;background:var(--g)}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#333;color:#fff;padding:10px 16px;border-radius:10px;z-index:99;display:none}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast"></div>
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+const same=(a,b)=>{a=nm(a);b=nm(b);return a===b||(a.length>3&&b.length>3&&(a.includes(b)||b.includes(a)))};
+const toast=t=>{const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2800)};
+
+/* ---------- úložiště (IndexedDB) ---------- */
+let db;
+const openDb=()=>new Promise((res,rej)=>{const r=indexedDB.open('kucharka',1);
+  r.onupgradeneeded=()=>{r.result.createObjectStore('items',{keyPath:'id'});r.result.createObjectStore('kv',{keyPath:'k'})};
+  r.onsuccess=()=>{db=r.result;res()};r.onerror=()=>rej(r.error)});
+const req=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const st=(s,m='readonly')=>db.transaction(s,m).objectStore(s);
+const getAll=s=>req(st(s).getAll()), put=(s,v)=>req(st(s,'readwrite').put(v)), del=(s,k)=>req(st(s,'readwrite').delete(k));
+const kvGet=async(k,d)=>{const r=await req(st('kv').get(k));return r?r.v:d}, kvSet=(k,v)=>put('kv',{k,v});
+
+/* ---------- stav ---------- */
+let items=[],shop=[],pantry=[],cfg={base:'',pass:'',always:'sůl,pepř,olej,voda,cukr'};
+const F0=()=>({meal:[],taste:'',diet:[],diff:'',tmin:0,tmax:180,liked:false,stars:0});
+let S={type:'food',q:'',sort:'liked',f:F0(),usePantry:false};
+let modal=null,lastModal=null,cur=null,servNow=2,cookBig=false,wake=null;
+let draft={type:'food',url:'',title:'',caption:'',photo:''};
+let rv={stars:0,note:''};
+const MEALS=['snídaně','oběd','večeře','svačina','dezert'],DIETS=['vegetariánské','veganské','bez lepku'],DIFFS=['lehké','střední','náročné'];
+
+const avg=it=>it.cooks?.length?it.cooks.reduce((a,c)=>a+c.stars,0)/it.cooks.length:0;
+const stars=n=>'★'.repeat(Math.round(n))+'☆'.repeat(5-Math.round(n));
+const fmtN=n=>n>=10?String(Math.round(n)):String(+n.toFixed(2)).replace('.',',');
+const amt=(x,k)=>x.amount==null?(x.unit||''):`${fmtN(x.amount*k)} ${x.unit||''}`.trim();
+const fmtT=m=>m==null?'':m>=60?`${Math.floor(m/60)} h${m%60?' '+m%60+' min':''}`:`${m} min`;
+
+function match(it){
+  const al=cfg.always.split(',').map(s=>s.trim()).filter(Boolean);
+  const need=(it.recipe?.ingredients||[]).filter(x=>!al.some(a=>same(a,x.name)));
+  const have=need.filter(x=>pantry.some(p=>same(p,x.name)));
+  return {pct:need.length?have.length/need.length:1,miss:need.filter(x=>!have.includes(x)).map(x=>x.name)};
+}
+function filtered(){
+  let l=items.filter(i=>i.type===S.type);const q=nm(S.q);
+  if(q)l=l.filter(i=>nm(i.title+' '+(i.recipe?.ingredients||[]).map(x=>x.name).join(' ')).includes(q));
+  if(S.type==='food'){const f=S.f;
+    l=l.filter(i=>{const r=i.recipe;
+      if(f.liked&&!i.liked)return false;if(f.stars&&avg(i)<f.stars)return false;
+      const any=f.meal.length||f.taste||f.diet.length||f.diff||f.tmin>0||f.tmax<180;
+      if(!r)return !any;
+      if(f.meal.length&&!f.meal.includes(r.meal))return false;
+      if(f.taste&&r.taste!==f.taste)return false;
+      if(f.diet.length&&!f.diet.every(d=>(r.diet||[]).includes(d)))return false;
+      if(f.diff&&r.difficulty!==f.diff)return false;
+      if(r.time!=null&&(r.time<f.tmin||(f.tmax<180&&r.time>f.tmax)))return false;
+      return true});
+  }
+  l.forEach(i=>i._m=null);
+  if(S.type==='food'&&S.usePantry&&pantry.length){l.forEach(i=>{if(i.recipe)i._m=match(i)});
+    return l.filter(i=>i._m).sort((a,b)=>b._m.pct-a._m.pct)}
+  const by={liked:(a,b)=>(b.liked-a.liked)||(b.created-a.created),new:(a,b)=>b.created-a.created,
+    stars:(a,b)=>avg(b)-avg(a),fast:(a,b)=>(a.recipe?.time??999)-(b.recipe?.time??999)};
+  return l.sort(by[S.sort]);
+}
+
+/* ---------- vykreslení ---------- */
+function chips(){
+  if(S.type!=='food')return'';const f=S.f,c=[];
+  f.meal.forEach(v=>c.push(['meal',v,v]));if(f.taste)c.push(['taste','',f.taste]);
+  f.diet.forEach(v=>c.push(['diet',v,v]));if(f.diff)c.push(['diff','',f.diff]);
+  if(f.tmin>0||f.tmax<180)c.push(['time','',`${f.tmin}–${f.tmax<180?f.tmax:'180+'} min`]);
+  if(f.liked)c.push(['liked','','❤️ olajkované']);if(f.stars)c.push(['stars','',`${f.stars}★+`]);
+  if(S.usePantry&&pantry.length)c.push(['pantry','','Co mám doma']);
+  return c.map(([k,v,l])=>`<button class="chip" data-act="rm" data-k="${k}" data-v="${esc(v)}">${esc(l)} ✕</button>`).join('');
+}
+function grid(){
+  const l=filtered();if(!l.length)return`<p class="m" style="grid-column:1/-1;text-align:center;padding:40px 10px">${items.some(i=>i.type===S.type)?'Nic nenalezeno.':'Zatím prázdno. Sdílej reel z Instagramu nebo klepni na +.'}</p>`;
+  return l.map(i=>{const a=avg(i),r=i.recipe;
+    const sub=i._m?`${Math.round(i._m.pct*100)} % shoda${i._m.miss.length?' · chybí: '+esc(i._m.miss.slice(0,3).join(', ')):''}`
+      :[r?.time!=null?fmtT(r.time):'',a?`${stars(a)}`:'',i.status==='processing'?'⏳':i.status==='error'?'⚠️':''].filter(Boolean).join(' · ');
+    return`<div class="card" data-act="open" data-id="${i.id}">${i.photo?`<img loading="lazy" src="${i.photo}">`:`<div class="ph0">${i.type==='food'?'🍽️':'🪵'}</div>`}
+      <button class="hb" data-act="like" data-id="${i.id}">${i.liked?'❤️':'🤍'}</button>
+      <div class="t">${esc(i.title)}</div><div class="s">${sub}</div></div>`}).join('');
+}
+function home(){const food=S.type==='food';
+  return`<header><div class="tabs"><button data-act="type" data-v="food" class="${food?'on':''}">🍳 Jídlo</button><button data-act="type" data-v="wood" class="${food?'':'on'}">🪵 Dřevo</button></div>
+  <button data-act="shop">🛒${shop.filter(x=>!x.done).length||''}</button><button data-act="settings">⚙️</button></header>
+  <div class="bar"><input id="q" type="search" placeholder="Hledat název nebo surovinu…" value="${esc(S.q)}">
+  ${food?`<button data-act="filter">Filtry</button><button data-act="pantry" class="${S.usePantry&&pantry.length?'on':''}">🥕 Co mám doma</button><button data-act="surprise">🎲 Překvap mě</button>`:''}</div>
+  <div id="chips">${chips()}</div>
+  <div class="sortrow"><select id="sort"><option value="liked">Olajkované první</option><option value="new">Nejnovější</option><option value="stars">Nejlépe hodnocené</option><option value="fast">Nejrychlejší</option></select></div>
+  <main id="grid">${grid()}</main><button class="fab" data-act="add">+</button>`;
+}
+const head=(t,extra='')=>`<div class="ph"><button data-act="close">←</button><h2>${t}</h2>${extra}</div>`;
+
+function detail(){
+  const it=items.find(i=>i.id===cur);if(!it)return'';const r=it.recipe;
+  let h=head(esc(it.title),`<button data-act="like" data-id="${it.id}">${it.liked?'❤️':'🤍'}</button>`);
+  if(it.photo)h+=`<img class="hero" src="${it.photo}">`;
+  h+='<div class="pad">';
+  if(it.url)h+=`<p><a href="${esc(it.url)}" target="_blank" rel="noopener">▶ Otevřít původní video</a></p>`;
+  if(it.type==='wood'){h+=`<textarea id="note" placeholder="Poznámka…">${esc(it.note)}</textarea>`}
+  else if(it.status==='processing'){h+='<p>⏳ Zpracovávám recept…</p>'}
+  else if(!r){h+=`<p class="err">${esc(it.err||'Recept chybí.')}</p>
+    <p class="m">Na Instagramu otevři reel, u popisku zkopíruj text a vlož ho sem:</p>
+    <textarea id="cap" placeholder="Popisek reelu…">${esc(it.caption)}</textarea>
+    <div class="row"><button data-act="pastecap">📋 Vložit ze schránky</button><button class="pri" data-act="retry">Zpracovat znovu</button></div>`}
+  else{const k=servNow/(r.servings||servNow),got=it.have||[];
+    h+=`<p class="m">${[fmtT(r.time),r.meal,r.taste,r.difficulty,...(r.diet||[])].filter(Boolean).join(' · ')}</p>
+    ${avg(it)?`<p>${stars(avg(it))} <span class="m">(${it.cooks.length}× uvařeno)</span></p>`:''}
+    <h3>Porce: <span id="sv">${servNow}</span></h3><input type="range" id="serv" min="1" max="12" value="${servNow}">
+    <h3>Ingredience</h3><ul class="ing">${r.ingredients.map((x,i)=>{const g=got.includes(x.name);
+      return`<li class="${g?'got':''}"><label><input type="checkbox" data-act="have" data-n="${esc(x.name)}" ${g?'checked':''}>
+      <span class="amt" data-a="${x.amount??''}" data-u="${esc(x.unit||'')}">${esc(amt(x,k))}</span><span>${esc(x.name)}</span></label></li>`}).join('')}</ul>
+    <div class="row"><button data-act="toshop">🛒 Chybějící do nákupního seznamu</button></div>
+    <h3>Postup</h3><div class="row"><button data-act="cook" class="${cookBig?'on':''}">👨‍🍳 Režim vaření</button></div>
+    <ol class="steps ${cookBig?'big':''}">${(r.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>`;}
+  if(it.type==='food'&&(r||it.status!=='processing')){
+    h+=`<h3>Moje recenze</h3><div class="stars">${[1,2,3,4,5].map(n=>`<button data-act="star" data-n="${n}" class="${n<=rv.stars?'on':''}">★</button>`).join('')}</div>
+    <textarea id="rvn" placeholder="Např. méně soli, péct o 5 min déle…">${esc(rv.note)}</textarea>
+    <button class="pri" data-act="addcook">Uložit záznam o uvaření</button>
+    ${[...(it.cooks||[])].reverse().map(c=>`<div class="cook"><b>${stars(c.stars)}</b> <span class="m">${new Date(c.date).toLocaleDateString('cs')}</span>
+      <button data-act="delcook" data-d="${c.date}" style="float:right;padding:2px 8px">✕</button><div>${esc(c.note)}</div></div>`).join('')}
+    <h3>Poznámka</h3><textarea id="note">${esc(it.note)}</textarea>`;}
+  h+=`<div class="row" style="margin-top:24px"><button data-act="photo">📷 Změnit fotku</button><input type="file" id="pf" accept="image/*" hidden><button data-act="del" style="color:#c0392b">🗑 Smazat</button></div></div>`;
+  return head0(h);
+}
+const head0=h=>h; // (hlavička je už součástí h)
+
+function addP(){const d=draft;
+  return head('Přidat')+`<div class="pad">
+  <div class="row"><button data-act="dtype" data-v="food" class="${d.type==='food'?'on':''}">🍳 Jídlo</button><button data-act="dtype" data-v="wood" class="${d.type==='wood'?'on':''}">🪵 Dřevo</button></div>
+  <input data-d="url" placeholder="Odkaz na reel" value="${esc(d.url)}"><div style="height:8px"></div>
+  <input data-d="title" placeholder="Název (u jídla se doplní automaticky)" value="${esc(d.title)}">
+  ${d.type==='food'?`<p class="m">Popisek reelu (tři tečky u popisku → Kopírovat):</p>
+  <textarea data-d="caption" placeholder="Vlož text receptu…">${esc(d.caption)}</textarea>
+  <button data-act="dpaste">📋 Vložit ze schránky</button>`:''}
+  <p class="m">Fotka (nepovinné, jinak se zkusí stáhnout automaticky):</p>
+  <div class="row"><button data-act="dphoto">📷 Z galerie</button><input type="file" id="df" accept="image/*" hidden>${d.photo?`<img src="${d.photo}" style="height:60px;border-radius:8px">`:''}</div>
+  <button class="pri" data-act="dsave" style="width:100%;margin-top:16px;padding:14px">Uložit</button></div>`;
+}
+function filterP(){const f=S.f;
+  const grp=(k,arr)=>arr.map(v=>`<button data-act="ftog" data-k="${k}" data-v="${v}" class="${(Array.isArray(f[k])?f[k].includes(v):f[k]===v)?'on':''}">${v}</button>`).join('');
+  return head('Filtry')+`<div class="pad"><h3>Typ jídla</h3><div class="row">${grp('meal',MEALS)}</div>
+  <h3>Chuť</h3><div class="row">${grp('taste',['sladké','slané'])}</div>
+  <h3>Dieta</h3><div class="row">${grp('diet',DIETS)}</div>
+  <h3>Náročnost</h3><div class="row">${grp('diff',DIFFS)}</div>
+  <h3>Čas: <span id="tl">${f.tmin}–${f.tmax<180?f.tmax:'180+'} min</span></h3>
+  <div class="dual"><div class="tr"></div><div class="fl" id="fl"></div><input type="range" id="tmin" min="0" max="180" step="5" value="${f.tmin}"><input type="range" id="tmax" min="0" max="180" step="5" value="${f.tmax}"></div>
+  <h3>Další</h3><div class="row"><button data-act="fliked" class="${f.liked?'on':''}">❤️ Jen olajkované</button>
+  <select id="fst" style="width:auto"><option value="0">Jakékoli hodnocení</option>${[3,4,5].map(n=>`<option value="${n}" ${f.stars==n?'selected':''}>${n}★ a víc</option>`).join('')}</select></div>
+  <div class="row" style="margin-top:20px"><button data-act="fclear">Vymazat vše</button><button class="pri" data-act="close" style="flex:1">Zobrazit recepty</button></div></div>`;
+}
+function pantryP(){
+  return head('Co mám doma')+`<div class="pad"><div class="row"><input id="pin" placeholder="např. kuřecí, rýže, brokolice (odděl čárkou)" style="flex:1"><button class="pri" data-act="padd">Přidat</button></div>
+  <div class="row">${pantry.map(p=>`<button class="chip" data-act="prem" data-v="${esc(p)}">${esc(p)} ✕</button>`).join('')||'<span class="m">Zatím nic.</span>'}</div>
+  <div class="row" style="margin-top:16px"><button class="pri" data-act="puse" style="flex:1">${pantry.length?'Řadit recepty podle shody':'Zavřít'}</button>${S.usePantry?'<button data-act="poff">Vypnout</button>':''}<button data-act="pclear">Smazat vše</button></div>
+  <p class="m">Suroviny z nastavení „vždy doma“ se nepočítají jako chybějící.</p></div>`;
+}
+function shopP(){
+  return head('Nákupní seznam',`<button data-act="sclear">Smazat hotové</button>`)+`<div class="pad"><div class="row"><input id="sin" placeholder="Přidat položku" style="flex:1"><button class="pri" data-act="sadd">+</button></div>
+  <ul class="ing">${shop.map((x,i)=>`<li class="${x.done?'got':''}"><label><input type="checkbox" data-act="stog" data-i="${i}" ${x.done?'checked':''}><span>${esc(x.name)}</span></label></li>`).join('')||'<li class="m">Prázdný.</li>'}</ul></div>`;
+}
+function setP(){
+  return head('Nastavení')+`<div class="pad">
+  <p class="m">Adresa serveru (nech prázdné, pokud aplikace běží na stejné adrese jako server):</p><input data-c="base" value="${esc(cfg.base)}" placeholder="https://moje-kucharka.netlify.app">
+  <p class="m">Heslo (stejné jako APP_PASSWORD na serveru):</p><input data-c="pass" type="password" value="${esc(cfg.pass)}">
+  <p class="m">Suroviny „vždy doma“ (čárkou):</p><input data-c="always" value="${esc(cfg.always)}">
+  <h3>Záloha dat</h3><div class="row"><button data-act="export">⬇ Exportovat</button><button data-act="import">⬆ Importovat</button><input type="file" id="imp" accept="application/json" hidden></div>
+  <p class="m">Data jsou uložena jen v tomto telefonu, proto občas udělej zálohu.</p></div>`;
+}
+const panel=()=>({detail,add:addP,filter:filterP,pantry:pantryP,shop:shopP,settings:setP}[modal])();
+function render(){
+  const o=$('.ov'),sc=o&&modal===lastModal?o.scrollTop:0;lastModal=modal;
+  $('#app').innerHTML=home()+(modal?`<div class="ov">${panel()}</div>`:'');
+  const s=$('#sort');if(s)s.value=S.sort;
+  const n=$('.ov');if(n)n.scrollTop=sc;
+  if(modal==='filter')fillBar();
+}
+function fillBar(){const a=+$('#tmin').value,b=+$('#tmax').value,f=$('#fl');if(f){f.style.left=a/180*100+'%';f.style.right=100-b/180*100+'%'}}
+
+/* ---------- AI zpracování ---------- */
+async function api(body){
+  const r=await fetch((cfg.base||'')+'/api/parse',{method:'POST',headers:{'content-type':'application/json','x-pass':cfg.pass},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(j.error||'Chyba '+r.status);e.image=j.image;throw e}return j;
+}
+async function process(it,titleGiven){
+  it.status='processing';it.err='';
+  try{
+    const r=await api({url:it.url,caption:it.caption,type:it.type,image:!!it.photo});
+    if(r.image&&!it.photo)it.photo=r.image;
+    if(it.type==='food'){it.recipe=r.recipe;if(!titleGiven&&r.recipe.title)it.title=r.recipe.title}
+    else if(r.title&&it.title==='Bez názvu')it.title=r.title;
+    it.status='ready';
+  }catch(e){
+    if(e.image&&!it.photo)it.photo=e.image;
+    if(it.type==='food'){it.status='error';it.err=e.message}else it.status='ready';
+  }
+  await put('items',it);render();
+}
+const saveIt=it=>put('items',it);
+
+/* ---------- fotky ---------- */
+function resize(file){return new Promise(res=>{const img=new Image();img.onload=()=>{const s=Math.min(1,900/Math.max(img.width,img.height)),c=document.createElement('canvas');
+  c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.8))};img.src=URL.createObjectURL(file)})}
+
+/* ---------- události ---------- */
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act,id=t.dataset.id;
+  const it=items.find(i=>i.id===(id||cur));
+  switch(a){
+    case'type':S.type=t.dataset.v;break;
+    case'open':cur=id;modal='detail';rv={stars:0,note:''};servNow=items.find(i=>i.id===id)?.recipe?.servings||2;break;
+    case'close':modal=null;if(wake){wake.release();wake=null}cookBig=false;break;
+    case'like':e.stopPropagation();it.liked=!it.liked;await saveIt(it);break;
+    case'add':draft={type:S.type,url:'',title:'',caption:'',photo:''};modal='add';break;
+    case'dtype':draft.type=t.dataset.v;break;
+    case'dpaste':try{draft.caption=await navigator.clipboard.readText()}catch{toast('Schránku se nepodařilo přečíst – vlož text ručně')}break;
+    case'dphoto':$('#df').click();return;
+    case'dsave':{
+      if(!draft.url&&!draft.title&&!draft.caption)return toast('Zadej odkaz nebo název');
+      const n={id:crypto.randomUUID(),type:draft.type,title:draft.title||'Bez názvu',url:draft.url,photo:draft.photo,note:'',liked:false,created:Date.now(),cooks:[],have:[],caption:draft.caption,status:'processing'};
+      items.push(n);await saveIt(n);S.type=n.type;modal=null;render();process(n,!!draft.title);return}
+    case'retry':{const c=$('#cap');if(c)it.caption=c.value;process(it,true);break}
+    case'pastecap':try{it.caption=await navigator.clipboard.readText();await saveIt(it)}catch{toast('Schránku se nepodařilo přečíst')}break;
+    case'have':{const n=t.dataset.n;it.have=it.have||[];const i=it.have.indexOf(n);i<0?it.have.push(n):it.have.splice(i,1);await saveIt(it);break}
+    case'toshop':{const miss=(it.recipe.ingredients).filter(x=>!(it.have||[]).includes(x.name));const k=servNow/(it.recipe.servings||servNow);
+      let n=0;miss.forEach(x=>{if(!shop.some(s=>same(s.name,x.name)&&!s.done)){shop.push({name:`${x.name}${x.amount!=null?' – '+amt(x,k):''}`,done:false});n++}});
+      await kvSet('shop',shop);toast(`Přidáno ${n} položek`);break}
+    case'cook':cookBig=!cookBig;if(cookBig&&navigator.wakeLock)try{wake=await navigator.wakeLock.request('screen')}catch{}else if(wake){wake.release();wake=null}break;
+    case'star':rv.stars=+t.dataset.n;break;
+    case'addcook':if(!rv.stars)return toast('Vyber hvězdičky');it.cooks.push({date:Date.now(),stars:rv.stars,note:rv.note});rv={stars:0,note:''};await saveIt(it);break;
+    case'delcook':it.cooks=it.cooks.filter(c=>c.date!=t.dataset.d);await saveIt(it);break;
+    case'photo':$('#pf').click();return;
+    case'del':if(!confirm('Opravdu smazat?'))return;await del('items',it.id);items=items.filter(i=>i!==it);modal=null;break;
+    case'filter':modal='filter';break;
+    case'ftog':{const f=S.f,k=t.dataset.k,v=t.dataset.v;if(Array.isArray(f[k])){const i=f[k].indexOf(v);i<0?f[k].push(v):f[k].splice(i,1)}else f[k]=f[k]===v?'':v;break}
+    case'fliked':S.f.liked=!S.f.liked;break;
+    case'fclear':S.f=F0();break;
+    case'rm':{const k=t.dataset.k,v=t.dataset.v,f=S.f;if(k==='meal'||k==='diet')f[k]=f[k].filter(x=>x!==v);else if(k==='time'){f.tmin=0;f.tmax=180}else if(k==='liked')f.liked=false;else if(k==='stars')f.stars=0;else if(k==='pantry')S.usePantry=false;else f[k]='';break}
+    case'surprise':{const l=filtered();if(!l.length)return toast('Nic k vybrání');const p=l[Math.floor(Math.random()*l.length)];cur=p.id;modal='detail';rv={stars:0,note:''};servNow=p.recipe?.servings||2;break}
+    case'pantry':modal='pantry';break;
+    case'padd':{const v=$('#pin').value.split(',').map(s=>s.trim()).filter(Boolean);v.forEach(x=>{if(!pantry.some(p=>nm(p)===nm(x)))pantry.push(x)});await kvSet('pantry',pantry);break}
+    case'prem':pantry=pantry.filter(p=>p!==t.dataset.v);await kvSet('pantry',pantry);break;
+    case'pclear':pantry=[];S.usePantry=false;await kvSet('pantry',pantry);break;
+    case'puse':S.usePantry=pantry.length>0;modal=null;break;
+    case'poff':S.usePantry=false;modal=null;break;
+    case'shop':modal='shop';break;
+    case'sadd':{const v=$('#sin').value.trim();if(v){shop.push({name:v,done:false});await kvSet('shop',shop)}break}
+    case'stog':shop[+t.dataset.i].done=!shop[+t.dataset.i].done;await kvSet('shop',shop);break;
+    case'sclear':shop=shop.filter(x=>!x.done);await kvSet('shop',shop);break;
+    case'settings':modal='settings';break;
+    case'export':{const data={items,shop,pantry,cfg:{always:cfg.always}};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));a.download='kucharka-zaloha.json';a.click();return}
+    case'import':$('#imp').click();return;
+  }
+  render();
+});
+document.addEventListener('input',e=>{const t=e.target;
+  if(t.id==='q'){S.q=t.value;$('#grid').innerHTML=grid()}
+  else if(t.id==='serv'){servNow=+t.value;$('#sv').textContent=servNow;const it=items.find(i=>i.id===cur),k=servNow/(it.recipe.servings||servNow);
+    document.querySelectorAll('.amt').forEach(s=>{s.textContent=s.dataset.a===''?s.dataset.u:`${fmtN(+s.dataset.a*k)} ${s.dataset.u}`.trim()})}
+  else if(t.id==='tmin'||t.id==='tmax'){let a=+$('#tmin').value,b=+$('#tmax').value;if(t.id==='tmin'&&a>b){b=a;$('#tmax').value=b}if(t.id==='tmax'&&b<a){a=b;$('#tmin').value=a}
+    S.f.tmin=a;S.f.tmax=b;$('#tl').textContent=`${a}–${b<180?b:'180+'} min`;fillBar()}
+  else if(t.dataset.d){draft[t.dataset.d]=t.value}
+  else if(t.dataset.c){cfg[t.dataset.c]=t.value;kvSet('cfg',cfg)}
+  else if(t.id==='rvn')rv.note=t.value;
+  else if(t.id==='note'){const it=items.find(i=>i.id===cur);it.note=t.value;saveIt(it)}
+  else if(t.id==='cap'){const it=items.find(i=>i.id===cur);it.caption=t.value}
+});
+document.addEventListener('change',async e=>{const t=e.target;
+  if(t.id==='sort'){S.sort=t.value;$('#grid').innerHTML=grid()}
+  else if(t.id==='fst'){S.f.stars=+t.value}
+  else if(t.id==='df'&&t.files[0]){draft.photo=await resize(t.files[0]);render()}
+  else if(t.id==='pf'&&t.files[0]){const it=items.find(i=>i.id===cur);it.photo=await resize(t.files[0]);await saveIt(it);render()}
+  else if(t.id==='imp'&&t.files[0]){try{const d=JSON.parse(await t.files[0].text());
+    for(const i of d.items||[]){await saveIt(i)}items=await getAll('items');
+    if(d.shop){shop=d.shop;await kvSet('shop',shop)}if(d.pantry){pantry=d.pantry;await kvSet('pantry',pantry)}toast('Import hotový');render()}catch{toast('Soubor se nepodařilo načíst')}}
+  else if(t.id==='tmin'||t.id==='tmax'||t.id==='fst'){render()}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'){if(e.target.id==='pin')$('[data-act=padd]').click();if(e.target.id==='sin')$('[data-act=sadd]').click()}});
+
+/* ---------- start ---------- */
+(async()=>{
+  await openDb();
+  items=await getAll('items');shop=await kvGet('shop',[]);pantry=await kvGet('pantry',[]);cfg={...cfg,...await kvGet('cfg',{})};
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+  const p=new URLSearchParams(location.search);
+  if(p.has('share')||p.has('url')||p.has('text')){
+    const m=((p.get('url')||'')+' '+(p.get('text')||'')).match(/https?:\/\/\S+/);
+    draft={type:'food',url:m?m[0]:'',title:'',caption:'',photo:''};modal='add';history.replaceState(null,'','./');
+  }
+  render();
+  // dokončení zpracování, které se přerušilo zavřením aplikace
+  items.filter(i=>i.status==='processing').forEach(i=>process(i,i.title!=='Bez názvu'));
+})();
+</script>
+</body>
+</html>
