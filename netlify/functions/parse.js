@@ -59,19 +59,30 @@ exports.handler = async event => {
   let t = '';
   try {
     if (process.env.GEMINI_API_KEY) {
-      const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYS }] },
-          contents: [{ role: 'user', parts: [{ text: caption.slice(0, 6000) }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-        })
-      });
-      const j = await r.json();
-      if (!r.ok) return out(502, { error: 'AI (Gemini): ' + (j.error?.message || r.status), ...result });
-      t = (j.candidates?.[0]?.content?.parts || []).map(c => c.text || '').join('');
+      // Zkouší modely postupně: když je jeden přetížený nebo nedostupný, přejde na další.
+      const models = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
+        .filter((m, i, a) => m && a.indexOf(m) === i);
+      let lastErr = '';
+      for (const model of models) {
+        for (let attempt = 0; attempt < 2 && !t; attempt++) {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: SYS }] },
+              contents: [{ role: 'user', parts: [{ text: caption.slice(0, 6000) }] }],
+              generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+            })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) { t = (j.candidates?.[0]?.content?.parts || []).map(c => c.text || '').join(''); break; }
+          lastErr = `${model}: ${j.error?.message || r.status}`;
+          if (r.status === 503 || r.status === 429) await new Promise(res => setTimeout(res, 1500)); // krátká pauza a znovu
+          else break; // jiná chyba (např. model neexistuje) -> rovnou další model
+        }
+        if (t) break;
+      }
+      if (!t) return out(502, { error: 'AI (Gemini) je teď nedostupná, zkus to za chvíli. ' + lastErr, ...result });
     } else {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
