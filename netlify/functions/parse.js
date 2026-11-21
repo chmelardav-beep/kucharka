@@ -48,7 +48,7 @@ async function meta(url) {
     const isIg = /(^|\.)instagram\.com$/i.test(host);
     const r = await fetch(url, {
       headers: { 'user-agent': isIg ? UA_FB : UA_BROWSER, 'accept-language': 'cs,en;q=0.8', accept: 'text/html,application/xhtml+xml' },
-      redirect: 'follow', signal: AbortSignal.timeout(7000)
+      redirect: 'follow', signal: AbortSignal.timeout(4500)
     });
     const h = await r.text();
     const g = p => {
@@ -72,7 +72,7 @@ async function meta(url) {
 async function fetchImage(u) {
   if (!u) return '';
   try {
-    const ir = await fetch(u, { headers: { 'user-agent': UA_BROWSER }, signal: AbortSignal.timeout(5000) });
+    const ir = await fetch(u, { headers: { 'user-agent': UA_BROWSER }, signal: AbortSignal.timeout(3500) });
     const buf = Buffer.from(await ir.arrayBuffer());
     if (ir.ok && buf.length < 1500000) return `data:${ir.headers.get('content-type') || 'image/jpeg'};base64,${buf.toString('base64')}`;
   } catch {}
@@ -90,51 +90,66 @@ Return ONLY one JSON object, no markdown:
 Unify synonyms (vajíčka -> vejce). Convert fractions to decimals. Ignore navigation, ads, comments and unrelated recipes. If the text is not a recipe or has no ingredients, return {"is_recipe":false}.`;
 
 exports.handler = async event => {
+  const T0 = Date.now(), BUDGET = 8500; // Netlify ukončí funkci po ~10 s, proto držíme čas pod kontrolou
+  const left = () => BUDGET - (Date.now() - T0);
   if (event.httpMethod !== 'POST') return out(405, { error: 'POST only' });
   if (process.env.APP_PASSWORD && event.headers['x-pass'] !== process.env.APP_PASSWORD) return out(401, { error: 'Špatné heslo (nastavení ⚙️)' });
   let b; try { b = JSON.parse(event.body || '{}'); } catch { return out(400, { error: 'Špatný požadavek' }); }
   let caption = (b.caption || '').trim();
   let imgP = Promise.resolve(''), title = '';
   if (b.url && (!caption || !b.image)) {
-    const m = await meta(b.url);
-    if (!b.image) imgP = fetchImage(m.imageUrl); // stahuje se souběžně s AI
-    if (b.type === 'wood') title = m.title.slice(0, 80);
-    if (!caption) caption = m.recipeText || m.desc;
+    const metaP = meta(b.url);
+    if (!caption) {
+      const m = await metaP; // text z odkazu je potřeba hned
+      if (!b.image) imgP = fetchImage(m.imageUrl);
+      if (b.type === 'wood') title = m.title.slice(0, 80);
+      caption = m.recipeText || m.desc;
+    } else if (!b.image) {
+      imgP = metaP.then(m => fetchImage(m.imageUrl)); // fotka se stahuje souběžně s AI
+    }
   }
-  const finish = async (s, body) => { const image = await imgP; return out(s, { ...body, ...(image ? { image } : {}), ...(title ? { title } : {}) }); };
+  const finish = async (s, body) => {
+    const image = await Promise.race([imgP, new Promise(r => setTimeout(() => r(''), Math.max(300, left())))]);
+    return out(s, { ...body, ...(image ? { image } : {}), ...(title ? { title } : {}) });
+  };
   if (b.type === 'wood') return finish(200, {});
   if (!caption || caption.length < 30) return finish(422, { error: 'Nepodařilo se získat text receptu. Vlož ho ručně.' });
   const input = caption.slice(0, 9000);
   let t = '';
   try {
     if (process.env.GEMINI_API_KEY) {
-      const models = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
+      // rychlé modely první (čas je omezený), při přetížení nebo chybě se zkouší další
+      const models = [process.env.GEMINI_MODEL, 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash']
         .filter((m, i, a) => m && a.indexOf(m) === i);
       let lastErr = '';
-      for (const model of models) {
-        for (let attempt = 0; attempt < 2 && !t; attempt++) {
-          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: SYS }] },
-              contents: [{ role: 'user', parts: [{ text: input }] }],
-              generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-            })
-          });
-          const j = await r.json().catch(() => ({}));
-          if (r.ok) { t = (j.candidates?.[0]?.content?.parts || []).map(c => c.text || '').join(''); break; }
-          lastErr = `${model}: ${j.error?.message || r.status}`;
-          if (r.status === 503 || r.status === 429) await new Promise(res => setTimeout(res, 1500));
-          else break;
+      outer: for (const model of models) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (left() < 2500) break outer;
+          try {
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+              signal: AbortSignal.timeout(Math.max(2000, left() - 300)),
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: SYS }] },
+                contents: [{ role: 'user', parts: [{ text: input }] }],
+                generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+              })
+            });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok) { t = (j.candidates?.[0]?.content?.parts || []).map(c => c.text || '').join(''); break outer; }
+            lastErr = `${model}: ${j.error?.message || r.status}`;
+            if (r.status === 503 || r.status === 429) { await new Promise(res => setTimeout(res, 700)); continue; }
+            break; // jiná chyba (např. model neexistuje) -> další model
+          } catch (e) { lastErr = `${model}: ${e.name === 'TimeoutError' ? 'pomalá odpověď' : e.message}`; break; }
         }
-        if (t) break;
       }
-      if (!t) return finish(502, { error: 'AI (Gemini) je teď nedostupná, zkus to za chvíli. ' + lastErr });
+      if (!t) return finish(502, { error: 'AI teď odpovídá pomalu nebo je přetížená. Zkus to znovu, většinou vyjde podruhé. (' + lastErr + ')' });
     } else {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        signal: AbortSignal.timeout(Math.max(2000, left())),
         body: JSON.stringify({ model: MODEL, max_tokens: 2500, system: SYS, messages: [{ role: 'user', content: input }] })
       });
       const j = await r.json();
